@@ -1,0 +1,65 @@
+version: '3.9'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: broiler-db
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-broiler_farm}
+      MYSQL_USER: ${MYSQL_USER:-broiler}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-broiler123}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: broiler-server
+    restart: unless-stopped
+    env_file:
+      - ./server/.env.example
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE:-broiler_farm}
+      DB_USER: ${MYSQL_USER:-broiler}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-broiler123}
+      JWT_SECRET: ${JWT_SECRET:-supersecretjwtkey}
+      PORT: 3001
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: broiler-client
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      VITE_API_URL: http://localhost:3001/api
+    depends_on:
+      - server
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+
+volumes:
+  mysql_data:
